@@ -113,7 +113,28 @@ export function looksLikeHeading(text) {
   const cleaned = stripHeadingNumber(text)
   if (!cleaned || countWords(cleaned) > 8) return false
   if (/[.!?;,]$/.test(normalize(text))) return false
+  // `Bibliography 14` is a contents entry, not a heading. Promoting it would
+  // cut the essay off as back matter, so we would rather lose a real
+  // `Appendix 2` heading (which merely over-counts) than drop the whole essay.
+  if (tocEntryShape(text)) return false
   return SECTION_KINDS.some((kind) => kind.test.test(cleaned))
+}
+
+/** The heading of a contents page, typed or styled. */
+export const CONTENTS_TITLE = /^(table of )?contents$/i
+
+/**
+ * A contents-page entry: `Introduction .......... 3`, `Bibliography 14`.
+ *
+ * A typed contents page is just ordinary paragraphs, so its lines otherwise
+ * read as section headings — and a line like `Bibliography 14` would then cut
+ * the whole essay off as back matter. Dot leaders or a trailing page number
+ * are what distinguish an entry from a real heading.
+ */
+export function tocEntryShape(text) {
+  const cleaned = normalize(text)
+  if (!cleaned || countWords(cleaned) > 14) return false
+  return /(\.{2,}|…|_{2,})\s*\d{1,4}$/.test(cleaned) || /\s\d{1,4}$/.test(cleaned)
 }
 
 const CAPTION_PATTERN = /^(table|figure|fig|chart|diagram|graph|image|map|plate|exhibit|photograph|illustration)\s*\.?\s*(\d+[a-z]?|[ivxlc]+|[A-Z])\b/i

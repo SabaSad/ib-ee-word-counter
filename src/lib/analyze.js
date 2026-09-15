@@ -8,7 +8,15 @@
 
 import { countWords, normalize } from './tokenize.js'
 import { classifyNote, classifyParenthetical } from './patterns.js'
-import { ABSTRACT_OPENER, captionShape, classifyHeading, looksLikeHeading, stripHeadingNumber } from './sections.js'
+import {
+  ABSTRACT_OPENER,
+  captionShape,
+  classifyHeading,
+  CONTENTS_TITLE,
+  looksLikeHeading,
+  stripHeadingNumber,
+  tocEntryShape,
+} from './sections.js'
 
 export const WORD_LIMIT = 4000
 
@@ -56,9 +64,49 @@ function snippet(text, start, length, pad = 45) {
   return (from > 0 ? '…' : '') + normalize(text.slice(from, to)) + (to < text.length ? '…' : '')
 }
 
+/**
+ * Mark the entries of a typed contents page, which Word leaves as ordinary
+ * paragraphs when the author did not use an automatic table of contents.
+ *
+ * Left alone, `Bibliography 14` reads as a real heading and everything after
+ * it is excluded as back matter — silently dropping the entire essay.
+ */
+function markContentsEntries(blocks) {
+  const isEntry = (b) => !!b && b.type === 'paragraph' && !b.list && tocEntryShape(b.text)
+  const consume = (from) => {
+    let j = from
+    while (isEntry(blocks[j])) {
+      blocks[j].type = 'toc'
+      j += 1
+    }
+    return j
+  }
+
+  // A contents page is always at the front, so a bare run of entries is only
+  // read as one near the start — three short numbered lines in the middle of
+  // an essay are far more likely to be data.
+  const firstStyledHeading = blocks.findIndex((b) => b.type === 'heading' && !b.inferred)
+  const frontMatterEnd = firstStyledHeading >= 0 ? firstStyledHeading : Math.min(blocks.length, 30)
+
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i]
+    if (block.type !== 'paragraph' || block.list) continue
+
+    if (CONTENTS_TITLE.test(normalize(block.text))) {
+      i = consume(i + 1) - 1
+      continue
+    }
+    if (i < frontMatterEnd && isEntry(blocks[i]) && isEntry(blocks[i + 1]) && isEntry(blocks[i + 2])) {
+      i = consume(i) - 1
+    }
+  }
+}
+
 /** Promote heading-shaped paragraphs and mark figure/table captions. */
 function refineBlocks(blocks, { allowInferredHeadings }) {
   const refined = blocks.map((block) => ({ ...block }))
+
+  markContentsEntries(refined)
 
   if (allowInferredHeadings) {
     for (const block of refined) {
@@ -166,12 +214,27 @@ function classifySections(rawSections) {
     }
   }
 
-  // Body prose after the bibliography or appendices is almost always a
-  // stray heading rather than real content — exclude, but say so loudly.
-  const backMatterIndex = sections.findIndex((s) => AFTER_BACK_MATTER.has(s.kind))
+  // Body prose after the bibliography or appendices is usually a stray heading
+  // rather than real content. Two guards keep this from eating a whole essay:
+  // only a genuinely styled heading may trigger the cut, and the cut must not
+  // discard more prose than it keeps.
+  const bulk = (section) => section.blocks.reduce((n, b) => n + countWords(b.text), 0)
+  const backMatterIndex = sections.findIndex(
+    (s) => AFTER_BACK_MATTER.has(s.kind) && s.heading && !s.heading.inferred,
+  )
   if (backMatterIndex >= 0) {
-    for (const section of sections.slice(backMatterIndex + 1)) {
-      if (section.counted) {
+    const after = sections.slice(backMatterIndex + 1).filter((s) => s.counted)
+    const wordsAfter = after.reduce((n, s) => n + bulk(s), 0)
+    const wordsBefore = sections.slice(0, backMatterIndex).reduce((n, s) => n + (s.counted ? bulk(s) : 0), 0)
+
+    // The comparison only means something once there is real prose at stake;
+    // on a three-word document "more after than before" is noise.
+    if (wordsAfter > wordsBefore && wordsAfter >= 200) {
+      // The essay is mostly *after* this heading, so the heading is the thing
+      // that is wrong. Keep the words and say so.
+      for (const section of after) section.backMatterSuspect = true
+    } else {
+      for (const section of after) {
         section.counted = false
         section.uncertain = true
         section.reason = 'Appears after the bibliography/appendices — excluded by default'
@@ -311,6 +374,33 @@ export function analyze({
       'The abstract stopped being a required — or permitted — part of the Extended Essay in the 2018 reform. ' +
         'It is excluded from the count here, but you should remove it from the essay before you submit.',
     )
+  }
+
+  // --- Did we just throw away the essay? ------------------------------------
+  // The failure that matters most is silently excluding real body prose, so
+  // say it loudly rather than reporting a confidently wrong number.
+  const documentWords = sections.reduce((n, s) => n + s.allWords, 0)
+  const keptWords = sections.reduce((n, s) => n + (s.counted ? s.allWords : 0), 0)
+  if (documentWords >= 400 && keptWords < documentWords * 0.6) {
+    flag(
+      'warn',
+      `Only ${keptWords} of ${documentWords} words in the document are being counted`,
+      'That is a large share of the document excluded, which usually means a heading was misread — a contents ' +
+        'entry taken for a real heading, or a section placed in the wrong order. Check the section breakdown ' +
+        'below and tick anything back in that should count.',
+    )
+  }
+
+  for (const section of sections) {
+    if (!section.backMatterSuspect) continue
+    unsure({
+      kind: 'section',
+      title: `“${section.displayTitle}” sits after a bibliography or appendix heading`,
+      detail:
+        'It is being counted anyway, because most of the essay is after that heading — which suggests the ' +
+        'heading was misread rather than that this is stray text. Untick it if it really is back matter.',
+      sectionId: section.id,
+    })
   }
 
   // --- Structure -----------------------------------------------------------
