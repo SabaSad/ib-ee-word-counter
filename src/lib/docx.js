@@ -118,7 +118,9 @@ function scanDocumentXml(xml) {
 export async function readDocx(arrayBuffer) {
   const [conversion, zip] = await Promise.all([
     mammoth.convertToHtml(
-      { arrayBuffer },
+      // `arrayBuffer` is what mammoth's browser build reads and `buffer` is what
+      // its Node build reads. Passing both lets the same path run under tests.
+      { arrayBuffer, buffer: typeof Buffer === 'undefined' ? undefined : Buffer.from(arrayBuffer) },
       {
         styleMap: STYLE_MAP,
         includeDefaultStyleMap: true,

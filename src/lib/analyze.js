@@ -181,6 +181,21 @@ function classifySections(rawSections) {
     }
   })
 
+  // An abstract sits at the front by definition. A `Summary` heading later in
+  // the essay is a concluding subsection and counts — excluding it silently
+  // loses real body prose and wrongly tells the writer to delete it.
+  const firstIntro = sections.findIndex((s) => s.kind === 'introduction')
+  for (const section of sections) {
+    if (section.kind !== 'abstract') continue
+    if (firstIntro < 0 || section.index < firstIntro) continue
+    section.kind = 'body'
+    section.label = 'Body'
+    section.counted = true
+    section.sticky = false
+    section.reason = 'Main body — counts (a summary after the introduction is not an abstract)'
+    section.reclassifiedFromAbstract = true
+  }
+
   // A back-matter heading swallows everything nested beneath it, up to the next
   // heading at the same or a shallower level.
   let owner = null
@@ -362,7 +377,7 @@ export function analyze({
   const unsure = (item) => uncertain.push({ id: `unsure-${uncertain.length}`, ...item })
 
   // --- Abstract ------------------------------------------------------------
-  const abstractSection = sections.find((s) => s.kind === 'abstract')
+  const abstractSection = sections.find((s) => s.kind === 'abstract' && !s.reclassifiedFromAbstract)
   const abstractParagraph = sections
     .filter((s) => !s.counted && (s.kind === 'frontmatter' || s.index === 0))
     .flatMap((s) => s.blocks)
@@ -399,6 +414,18 @@ export function analyze({
       detail:
         'It is being counted anyway, because most of the essay is after that heading — which suggests the ' +
         'heading was misread rather than that this is stray text. Untick it if it really is back matter.',
+      sectionId: section.id,
+    })
+  }
+
+  for (const section of sections) {
+    if (!section.reclassifiedFromAbstract) continue
+    unsure({
+      kind: 'section',
+      title: `“${section.displayTitle}” is being counted as body text, not as an abstract`,
+      detail:
+        `It holds ${section.allWords} words and sits after the introduction, so it reads as a concluding ` +
+        'section rather than an abstract. Untick it in the section list if it really is an abstract.',
       sectionId: section.id,
     })
   }

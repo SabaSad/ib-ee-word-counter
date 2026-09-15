@@ -150,3 +150,35 @@ test('short numbered lines in the middle of an essay are not mistaken for conten
   // The three data lines still count as body prose.
   assert.equal(totals.total, 3006)
 })
+
+test('a “Summary” heading before the introduction is an abstract and is excluded', () => {
+  const { analysis, totals } = countOf(
+    ['<h1>Summary</h1>', body(200), '<h1>Introduction</h1>', body(1000)].join(''),
+  )
+  const summary = analysis.sections.find((s) => s.displayTitle === 'Summary')
+  assert.equal(summary.kind, 'abstract')
+  assert.equal(summary.counted, false)
+  assert.equal(totals.total, 1000)
+  assert.ok(analysis.flags.some((f) => /abstract/i.test(f.title)))
+})
+
+test('a “Summary” heading after the introduction is body text and counts', () => {
+  const { analysis, totals } = countOf(
+    ['<h1>Introduction</h1>', body(1000), '<h1>Conclusion</h1>', body(500), '<h3>Summary</h3>', body(200)].join(''),
+  )
+  const summary = analysis.sections.find((s) => s.displayTitle === 'Summary')
+  assert.equal(summary.kind, 'body')
+  assert.equal(summary.counted, true)
+  assert.equal(totals.total, 1700)
+})
+
+test('a late summary raises no “remove your abstract” warning, but is listed for review', () => {
+  const { analysis } = countOf(
+    ['<h1>Introduction</h1>', body(1000), '<h3>Summary</h3>', body(200)].join(''),
+  )
+  assert.equal(
+    analysis.flags.some((f) => /abstract/i.test(f.title)),
+    false,
+  )
+  assert.ok(analysis.uncertain.some((u) => /not as an abstract/.test(u.title)))
+})
