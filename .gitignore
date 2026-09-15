@@ -1,0 +1,25 @@
+node_modules/
+dist/
+
+# Vite / tooling
+.vite/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local Claude Code settings (shared settings.json stays tracked)
+.claude/settings.local.json
