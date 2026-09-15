@@ -1,5 +1,7 @@
 # EE Word Counter
 
+**Live: https://sabasad.github.io/ib-ee-word-counter/**
+
 A browser-only word counter for the IB Extended Essay. Drop in a `.docx` and it counts the essay
 against the IB's 4,000-word rules — excluding the title page, contents, captions, tables, citations,
 appendices and the bibliography, and separating explanatory footnotes (which count) from pure
@@ -24,6 +26,9 @@ npm test         # 107 tests, no browser needed
 ```
 
 `dist/` is a plain static site — any static host will serve it.
+
+Every push to `main` runs the test suite and, if it passes, deploys to GitHub Pages
+(`.github/workflows/deploy.yml`). A failing suite blocks the deploy.
 
 ## What counts, and what doesn't
 
